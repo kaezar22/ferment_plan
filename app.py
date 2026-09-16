@@ -1,8 +1,10 @@
 """
 Ferment Plan
 ------------
-Webapp en Streamlit para planificar y monitorear ciclos de fermentación
-y maduración de una cervecería (sin alertas por email por ahora).
+Webapp en Streamlit para planificar y monitorear ciclos de fermentadores
+de una cervecería, con alertas por correo cuando un ciclo está por
+terminar (el envío automático real lo hace scripts/check_alerts.py vía
+GitHub Actions; esta app además permite mandar una alerta de prueba).
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import streamlit as st
 
 from sheets import SheetsClient, DEFAULT_SPREADSHEET_ID, now_iso
 from ciclos import calcular_fin_fase, parse_iso, progreso_fase
+from alertas import send_email, SmtpCredentials
 
 TZ_LOCAL = ZoneInfo("America/Bogota")
 
@@ -55,7 +58,7 @@ except Exception as e:
 
 
 st.title("🍺 Ferment Plan")
-st.caption("Planificación y monitoreo de ciclos de fermentación")
+st.caption("Planificación, monitoreo y alertas de ciclos de fermentación")
 
 tab_config, tab_monitoreo, tab_historial = st.tabs(
     ["⚙️ Configuración", "📊 Monitoreo", "📜 Historial"]
@@ -65,6 +68,63 @@ tab_config, tab_monitoreo, tab_historial = st.tabs(
 # TAB 1 — CONFIGURACIÓN
 # ======================================================================
 with tab_config:
+    st.subheader("Alertas")
+    cfg = client.get_config()
+
+    with st.form("form_config_alertas"):
+        col1, col2, col3 = st.columns([2, 1, 1])
+        email_alertas = col1.text_input(
+            "Email(s) para alertas (separados por coma)",
+            value=cfg.get("email_alertas", ""),
+        )
+        antelacion_valor = col2.number_input(
+            "Antelación",
+            min_value=0.0,
+            value=float(cfg.get("antelacion_valor", 12) or 0),
+            step=1.0,
+        )
+        antelacion_unidad = col3.selectbox(
+            "Unidad",
+            options=["horas", "dias"],
+            index=0 if cfg.get("antelacion_unidad", "horas") == "horas" else 1,
+        )
+        if st.form_submit_button("Guardar configuración de alertas"):
+            client.set_config(
+                email_alertas=email_alertas,
+                antelacion_valor=antelacion_valor,
+                antelacion_unidad=antelacion_unidad,
+            )
+            st.success("Configuración guardada.")
+            st.rerun()
+
+    with st.expander("Enviar correo de prueba"):
+        st.caption(
+            "Requiere que `[gmail]` esté configurado en secrets (address y "
+            "app_password) para poder probar el envío desde la propia app."
+        )
+        if st.button("Enviar alerta de prueba"):
+            try:
+                gmail_cfg = st.secrets["gmail"]
+                creds = SmtpCredentials(gmail_cfg["address"], gmail_cfg["app_password"])
+                destinatarios = cfg.get("email_alertas", "").split(",")
+                send_email(
+                    creds,
+                    destinatarios,
+                    "[Ferment Plan] Correo de prueba",
+                    "Este es un correo de prueba de Ferment Plan. Si lo recibiste, "
+                    "la configuración de envío funciona correctamente.",
+                )
+                st.success(f"Correo de prueba enviado a: {cfg.get('email_alertas', '')}")
+            except KeyError:
+                st.error(
+                    "No encontré `[gmail]` en secrets.toml. Agrega `address` y "
+                    "`app_password` (ver README) para poder mandar correos de prueba "
+                    "desde la app."
+                )
+            except Exception as e:
+                st.error(f"No se pudo enviar el correo: {e}")
+
+    st.divider()
     st.subheader("Fermentadores")
 
     fermentadores = client.get_fermentadores()
