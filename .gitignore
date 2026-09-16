@@ -1,0 +1,14 @@
+# Secretos: nunca deben subirse al repo
+.streamlit/secrets.toml
+service_account.json
+*.json.key
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Sistema
+.DS_Store
