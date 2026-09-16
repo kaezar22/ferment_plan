@@ -4,8 +4,7 @@ sheets.py
 Capa de acceso a Google Sheets para Ferment Plan.
 
 No depende de Streamlit: recibe las credenciales de la cuenta de servicio
-y el ID del spreadsheet como parámetros, para poder usarse tanto desde
-app.py (Streamlit) como desde scripts/check_alerts.py (GitHub Actions).
+y el ID del spreadsheet como parámetros para poder usarse desde app.py.
 """
 
 from __future__ import annotations
@@ -37,19 +36,9 @@ LOTES_HEADERS = [
     "fecha_inicio_maduracion",
     "fecha_fin_maduracion",
     "estado",  # en_fermentacion | en_maduracion | completado
-    "alerta_fermentacion_enviada",
-    "alerta_maduracion_enviada",
     "fecha_completado",
     "notas",
 ]
-
-CONFIG_HEADERS = ["clave", "valor"]
-
-CONFIG_DEFAULTS = {
-    "email_alertas": "",
-    "antelacion_valor": "12",
-    "antelacion_unidad": "horas",  # "horas" | "dias"
-}
 
 
 def now_iso() -> str:
@@ -86,12 +75,6 @@ class SheetsClient:
     def ensure_sheets(self):
         self._ws_fermentadores = self._get_or_create_ws("Fermentadores", FERMENTADORES_HEADERS)
         self._ws_lotes = self._get_or_create_ws("Lotes", LOTES_HEADERS)
-        self._ws_config = self._get_or_create_ws("Config", CONFIG_HEADERS)
-
-        existing_keys = {row["clave"] for row in self._ws_config.get_all_records()}
-        for k, v in CONFIG_DEFAULTS.items():
-            if k not in existing_keys:
-                self._ws_config.append_row([k, v])
 
     # ------------------------------------------------------------------ #
     # Fermentadores
@@ -151,8 +134,6 @@ class SheetsClient:
                 "",  # fecha_inicio_maduracion (se llena al confirmar transición)
                 "",  # fecha_fin_maduracion (se calcula al confirmar transición)
                 "en_fermentacion",
-                "FALSE",
-                "FALSE",
                 "",  # fecha_completado
                 notas,
             ]
@@ -179,29 +160,6 @@ class SheetsClient:
                 "fecha_completado": fecha_completado_iso,
             },
         )
-
-    def marcar_alerta_enviada(self, lote_id: str, campo: str):
-        """campo: 'alerta_fermentacion_enviada' o 'alerta_maduracion_enviada'"""
-        self._update_cell_by_id(self._ws_lotes, lote_id, campo, "TRUE")
-
-    # ------------------------------------------------------------------ #
-    # Config
-    # ------------------------------------------------------------------ #
-    def get_config(self) -> dict:
-        rows = self._ws_config.get_all_records()
-        cfg = dict(CONFIG_DEFAULTS)
-        for r in rows:
-            cfg[r["clave"]] = r["valor"]
-        return cfg
-
-    def set_config(self, **kwargs):
-        rows = self._ws_config.get_all_records()
-        claves_existentes = {r["clave"]: i + 2 for i, r in enumerate(rows)}  # fila real (1-indexed + header)
-        for k, v in kwargs.items():
-            if k in claves_existentes:
-                self._ws_config.update_cell(claves_existentes[k], 2, str(v))
-            else:
-                self._ws_config.append_row([k, str(v)])
 
     # ------------------------------------------------------------------ #
     # Helpers internos

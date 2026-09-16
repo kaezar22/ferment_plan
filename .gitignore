@@ -3,6 +3,7 @@
 service_account.json
 *.json.key
 .env
+password.txt
 
 # Python
 __pycache__/
