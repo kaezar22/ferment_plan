@@ -44,6 +44,59 @@ def fmt(dt: datetime) -> str:
     return to_local(dt).strftime("%Y-%m-%d %H:%M")
 
 
+# ---------------------------------------------------------------------- #
+# Silueta de fermentador (SVG) con nivel de líquido según % de avance
+# ---------------------------------------------------------------------- #
+def fermenter_svg(pct: float, fase: str, width: int = 100) -> str:
+    pct = max(0.0, min(100.0, pct))
+    color = "#D98324" if fase == "fermentacion" else "#C9A227"
+
+    VBW, VBH = 140, 260
+    height = round(width * VBH / VBW)
+
+    bx1, bx2 = 20, 120          # bordes del cuerpo cilíndrico
+    by1, by2 = 20, 170          # tope y base del cuerpo cilíndrico
+    cx = (bx1 + bx2) / 2        # centro horizontal (también punta del cono)
+    tip_y = 230                 # punta del cono
+
+    # contorno completo del tanque (cuerpo + cono), usado también como clip del líquido
+    tank_path = f"M{bx1},{by1} L{bx2},{by1} L{bx2},{by2} L{cx},{tip_y} L{bx1},{by2} Z"
+
+    # altura del líquido: interpola linealmente desde la punta del cono (0%) hasta el tope (100%)
+    liquid_top_y = tip_y - (pct / 100) * (tip_y - by1)
+    clip_id = f"clip-{fase}-{int(pct * 100)}"
+
+    return f"""
+<svg width="{width}" height="{height}" viewBox="0 0 {VBW} {VBH}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="{clip_id}">
+      <path d="{tank_path}" />
+    </clipPath>
+  </defs>
+
+  <!-- patas -->
+  <line x1="{bx1+12}" y1="205" x2="{bx1+2}" y2="250" stroke="#5C4630" stroke-width="4" stroke-linecap="round" />
+  <line x1="{bx2-12}" y1="205" x2="{bx2-2}" y2="250" stroke="#5C4630" stroke-width="4" stroke-linecap="round" />
+
+  <!-- cuerpo del tanque (vacío) -->
+  <path d="{tank_path}" fill="#F4EEE3" stroke="#5C4630" stroke-width="3" />
+
+  <!-- líquido, recortado a la forma del tanque -->
+  <rect x="0" y="{liquid_top_y}" width="{VBW}" height="{VBH - liquid_top_y}" fill="{color}" clip-path="url(#{clip_id})" />
+  <rect x="{bx1}" y="{liquid_top_y}" width="{bx2-bx1}" height="4" fill="{color}" opacity="0.6" clip-path="url(#{clip_id})" />
+
+  <!-- contorno encima del líquido para que se vea nítido -->
+  <path d="{tank_path}" fill="none" stroke="#5C4630" stroke-width="3" />
+
+  <!-- tapa -->
+  <rect x="{cx-16}" y="{by1-10}" width="32" height="10" rx="2" fill="#F4EEE3" stroke="#5C4630" stroke-width="2.5" />
+
+  <!-- % en el centro del cuerpo -->
+  <text x="{cx}" y="{(by1+by2)/2 + 6}" font-size="22" font-weight="700" text-anchor="middle" fill="#3A2E1F">{pct:.0f}%</text>
+</svg>
+"""
+
+
 try:
     client = get_client()
 except Exception as e:
@@ -222,14 +275,15 @@ with tab_monitoreo:
             restante = fin_fase - ahora
 
             with st.container(border=True):
-                c1, c2 = st.columns([3, 2])
+                c0, c1, c2 = st.columns([1, 3, 2])
+                with c0:
+                    st.markdown(fermenter_svg(pct, fase), unsafe_allow_html=True)
                 with c1:
                     st.markdown(f"### {lote['fermentador_nombre']} — {lote['tipo_cerveza']}")
                     st.caption(
                         f"Fase actual: **{'Fermentación' if fase == 'fermentacion' else 'Maduración'}** "
                         f"({dias_fase} días) · Lote `{lote['id']}`"
                     )
-                    st.progress(pct / 100, text=f"{pct:.0f}% de avance")
                     dias_transcurridos = max(transcurrido.total_seconds(), 0) / 86400
                     if restante.total_seconds() >= 0:
                         st.write(
